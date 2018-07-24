@@ -5,11 +5,9 @@ import hashlib
 import base58
 import sys
 import array
-import traceback
 
 def log(string):
-  #print string
-  pass
+  print string
 
 def startsWithOpNCode(pub):
   try:
@@ -185,7 +183,10 @@ def readTransaction(blockFile):
 
 def readBlock(blockFile):
   magicNumber = binascii.hexlify(blockFile.read(4))
-  blockSize = hexToInt(readIntLittleEndian(blockFile))
+  try:
+    blockSize = hexToInt(readIntLittleEndian(blockFile))
+  except Exception as e:
+    return False
   version = hexToInt(readIntLittleEndian(blockFile))
   previousHash = binascii.hexlify(blockFile.read(32))
   merkleHash = binascii.hexlify(blockFile.read(32))
@@ -194,6 +195,7 @@ def readBlock(blockFile):
   bits = hexToInt(readIntLittleEndian(blockFile))
   nonce = hexToInt(readIntLittleEndian(blockFile))
   countOfTransactions = readVarInt(blockFile)
+
   log("Magic Number: " + magicNumber)
   log("Blocksize: " + str(blockSize))
   log("Version: " + str(version))
@@ -206,18 +208,17 @@ def readBlock(blockFile):
       
   for transactionIndex in range(0, countOfTransactions):
     readTransaction(blockFile)
+  return True
 
 def main():
   blockFilename = sys.argv[1]
   with open(blockFilename, "rb") as blockFile:
-    try:
       while True:
         sys.stdout.write('.')
         sys.stdout.flush()
-        readBlock(blockFile)
-    except Exception, e:
-      excType, excValue, excTraceback = sys.exc_info()
-      traceback.print_exception(excType, excValue, excTraceback, limit = 8, file = sys.stdout)
+        if not readBlock(blockFile):
+          break
+
 
 if __name__ == "__main__":
   main()
