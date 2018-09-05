@@ -66,7 +66,7 @@ def hex2int(value):
 
 
 def hex2str(value):
-    return binascii.hexlify(value)
+    return str(binascii.hexlify(value))
 
 
 def read_var_int(block_file):
@@ -93,12 +93,12 @@ def read_input(block_file):
 
     log("\n" + "Input")
     log("-" * 20)
-    log("> Previous Hash: " + previous_hash)
-    log("> Out ID: " + out_id)
+    log("> Previous Hash: " + str(previous_hash))
+    log("> Out ID: " + str(out_id))
     log("> Script length: " + str(script_length))
-    log("> Script Signature (PubKey) Raw: " + script_signature_raw)
-    log("> Script Signature (PubKey): " + script_signature)
-    log("> Seq No: " + seq_no)
+    log("> Script Signature (PubKey) Raw: " + str(script_signature_raw))
+    log("> Script Signature (PubKey): " + str(script_signature))
+    log("> Seq No: " + str(seq_no))
 
 
 def read_output(block_file):
@@ -116,8 +116,8 @@ def read_output(block_file):
     log("-" * 20)
     log("> Value: " + str(value))
     log("> Script length: " + str(script_length))
-    log("> Script Signature (PubKey) Raw: " + script_signature_raw)
-    log("> Script Signature (PubKey): " + script_signature)
+    log("> Script Signature (PubKey) Raw: " + str(script_signature_raw))
+    log("> Script Signature (PubKey): " + str(script_signature))
     log("> Address: " + address)
 
 
@@ -136,39 +136,39 @@ def read_transaction(block_file):
 
     if input_count == 0:
         extended_format = True
-    flags = ord(block_file.read(1))
-    cut_end1 = block_file.tell()
-    if flags != 0:
-        input_count = read_var_int(block_file)
-    log("\nInput Count: " + str(input_count))
-    for input_index in range(0, input_count):
-        input_ids.append(read_input(block_file))
-    output_count = read_var_int(block_file)
-    for outputIndex in range(0, output_count):
-        output_ids.append(read_output(block_file))
+        flags = ord(block_file.read(1))
+        cut_end1 = block_file.tell()
+        if flags != 0:
+            input_count = read_var_int(block_file)
+            log("\nInput Count: " + str(input_count))
+            for input_index in range(0, input_count):
+                input_ids.append(read_input(block_file))
+            output_count = read_var_int(block_file)
+            for output_index in range(0, output_count):
+                output_ids.append(read_output(block_file))
     else:
         cut_start1 = 0
-    cut_end1 = 0
-    log("\nInput Count: " + str(input_count))
-    for input_index in range(0, input_count):
-        input_ids.append(read_input(block_file))
-    output_count = read_var_int(block_file)
-    log("\nOutput Count: " + str(output_count))
-    for outputIndex in range(0, output_count):
-        output_ids.append(read_output(block_file))
+        cut_end1 = 0
+        log("\nInput Count: " + str(input_count))
+        for input_index in range(0, input_count):
+            input_ids.append(read_input(block_file))
+        output_count = read_var_int(block_file)
+        log("\nOutput Count: " + str(output_count))
+        for output_index in range(0, output_count):
+            output_ids.append(read_output(block_file))
 
     cut_start2 = 0
     cut_end2 = 0
     if extended_format:
         if flags & 1:
             cut_start2 = block_file.tell()
-    for input_index in range(0, input_count):
-        count_of_stack_items = read_var_int(block_file)
-    for stackItemIndex in range(0, count_of_stack_items):
-        stack_length = read_var_int(block_file)
-        stack_item = block_file.read(stack_length)[::-1]
-        log("Witness item: " + hex2str(stack_item))
-    cut_end2 = block_file.tell()
+            for input_index in range(0, input_count):
+                count_of_stack_items = read_var_int(block_file)
+                for stackItemIndex in range(0, count_of_stack_items):
+                    stack_length = read_var_int(block_file)
+                    stack_item = block_file.read(stack_length)[::-1]
+                    log("Witness item: " + hex2str(stack_item))
+            cut_end2 = block_file.tell()
 
     lock_time = hex2int(read_int_little_endian(block_file))
     if lock_time < 500000000:
@@ -181,15 +181,10 @@ def read_transaction(block_file):
     length_to_read = end_byte - begin_byte
     data_to_hash_for_transaction_id = block_file.read(length_to_read)
     if extended_format and cut_start1 != 0 and cut_end1 != 0 and cut_start2 != 0 and cut_end2 != 0:
-        data_to_hash_for_transaction_id = data_to_hash_for_transaction_id[
-                                          :(cut_start1 - begin_byte)] + data_to_hash_for_transaction_id[
-                                                                        (cut_end1 - begin_byte):(
-                                                                                cut_start2 - begin_byte)] + data_to_hash_for_transaction_id[
-                                                                                                            (
-                                                                                                                    cut_end2 - begin_byte):]
+        data_to_hash_for_transaction_id = data_to_hash_for_transaction_id[ :(cut_start1 - begin_byte)] + data_to_hash_for_transaction_id[(cut_end1 - begin_byte):( cut_start2 - begin_byte)] + data_to_hash_for_transaction_id[(cut_end2 - begin_byte):]
     elif extended_format:
         print(cut_start1, cut_end1, cut_start2, cut_end2)
-    quit()
+        quit()
     first_hash = hashlib.sha256(data_to_hash_for_transaction_id)
     second_hash = hashlib.sha256(first_hash.digest())
     hash_little_endian = second_hash.hexdigest()
@@ -214,11 +209,11 @@ def read_block(block_file):
     nonce = hex2int(read_int_little_endian(block_file))
     count_of_transactions = read_var_int(block_file)
 
-    log("Magic Number: " + magic_number)
+    log("Magic Number: " + str(magic_number))
     log("Blocksize: " + str(block_size))
     log("Version: " + str(version))
-    log("Previous Hash: " + previous_hash)
-    log("Merkle Hash: " + merkle_hash)
+    log("Previous Hash: " + str(previous_hash))
+    log("Merkle Hash: " + str(merkle_hash))
     log("Time: " + creation_time)
     log("Bits: " + str(bits))
     log("Nonce: " + str(nonce))
