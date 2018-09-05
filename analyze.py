@@ -4,221 +4,240 @@ import datetime
 import hashlib
 import base58
 import sys
-import array
+
 
 def log(string):
-  print string
+    print(string)
 
-def startsWithOpNCode(pub):
-  try:
-    intValue = int(pub[0:2], 16)
-    if intValue >= 1 and intValue <= 75:
-      return True
-  except:
-    pass
-  return False
 
-def publicKeyDecode(pub):
-  if pub.lower().startswith('76a914'):
-    pub = pub[6:-4]
-    result = (b'\x00') + binascii.unhexlify(pub)
-    h5 = hashlib.sha256(result)
-    h6 = hashlib.sha256(h5.digest())
-    result += h6.digest()[:4]
-    return base58.b58encode(result)
-  elif pub.lower().startswith('a9'):
-    return ""
-  elif startsWithOpNCode(pub):
-    pub = pub[2:-2]
-    h3 = hashlib.sha256(binascii.unhexlify(pub))
-    h4 = hashlib.new('ripemd160', h3.digest())
-    result = (b'\x00') + h4.digest()
-    h5 = hashlib.sha256(result)
-    h6 = hashlib.sha256(h5.digest())
-    result += h6.digest()[:4]
-    return base58.b58encode(result)
-  return ""
-
-def stringLittleEndianToBigEndian(string):
-  string = binascii.hexlify(string)
-  n = len(string) / 2
-  fmt = '%dh' % n
-  return struct.pack(fmt, *reversed(struct.unpack(fmt, string)))
-
-def readShortLittleEndian(blockFile):
-  return struct.pack(">H", struct.unpack("<H", blockFile.read(2))[0])
-
-def readLongLittleEndian(blockFile):
-  return struct.pack(">Q", struct.unpack("<Q", blockFile.read(8))[0])
-
-def readIntLittleEndian(blockFile):
-  return struct.pack(">I", struct.unpack("<I", blockFile.read(4))[0])
-
-def hexToInt(value):
-  return int(binascii.hexlify(value), 16)
-
-def hexToStr(value):
-  return binascii.hexlify(value)
-
-def readVarInt(blockFile):
-  varInt = ord(blockFile.read(1))
-  returnInt = 0
-  if varInt < 0xfd:
-    return varInt
-  if varInt == 0xfd:
-    returnInt = readShortLittleEndian(blockFile)
-  if varInt == 0xfe:
-    returnInt = readIntLittleEndian(blockFile)
-  if varInt == 0xff:
-    returnInt = readLongLittleEndian(blockFile)
-  return int(binascii.hexlify(returnInt), 16)
-
-def readInput(blockFile):
-  previousHash = binascii.hexlify(blockFile.read(32)[::-1])
-  outId = binascii.hexlify(readIntLittleEndian(blockFile))
-  scriptLength = readVarInt(blockFile)
-  scriptSignatureRaw = hexToStr(blockFile.read(scriptLength))
-  scriptSignature = scriptSignatureRaw
-  seqNo = binascii.hexlify(readIntLittleEndian(blockFile))
-
-  log("\n" + "Input")
-  log("-" * 20)
-  log("> Previous Hash: " + previousHash)
-  log("> Out ID: " + outId)
-  log("> Script length: " + str(scriptLength))
-  log("> Script Signature (PubKey) Raw: " + scriptSignatureRaw)
-  log("> Script Signature (PubKey): " + scriptSignature)
-  log("> Seq No: " + seqNo)
-
-def readOutput(blockFile):
-  value = hexToInt(readLongLittleEndian(blockFile)) / 100000000.0
-  scriptLength = readVarInt(blockFile)
-  scriptSignatureRaw = hexToStr(blockFile.read(scriptLength))
-  scriptSignature = scriptSignatureRaw
-  address = ''
-  try:
-    address = publicKeyDecode(scriptSignature)
-  except Exception, e:
-    print e
-    address = ''
-  log("\n" + "Output")
-  log("-" * 20)
-  log("> Value: " + str(value))
-  log("> Script length: " + str(scriptLength))
-  log("> Script Signature (PubKey) Raw: " + scriptSignatureRaw)
-  log("> Script Signature (PubKey): " + scriptSignature)
-  log("> Address: " + address)
-
-def readTransaction(blockFile):
-  extendedFormat = False
-  beginByte = blockFile.tell()
-  inputIds = []
-  outputIds = []
-  version = hexToInt(readIntLittleEndian(blockFile)) 
-  cutStart1 = blockFile.tell()
-  cutEnd1 = 0
-  inputCount = readVarInt(blockFile)
-  log("\n\n" + "Transaction")
-  log("-" * 100)
-  log("Version: " + str(version))
-
-  if inputCount == 0:
-    extendedFormat = True
-    flags = ord(blockFile.read(1))
-    cutEnd1 = blockFile.tell()
-    if flags != 0:
-      inputCount = readVarInt(blockFile)
-      log("\nInput Count: " + str(inputCount))
-      for inputIndex in range(0, inputCount):
-        inputIds.append(readInput(blockFile))
-      outputCount = readVarInt(blockFile)
-      for outputIndex in range(0, outputCount):
-        outputIds.append(readOutput(blockFile))
-  else:
-    cutStart1 = 0
-    cutEnd1 = 0
-    log("\nInput Count: " + str(inputCount))
-    for inputIndex in range(0, inputCount):
-      inputIds.append(readInput(blockFile))
-    outputCount = readVarInt(blockFile)
-    log("\nOutput Count: " + str(outputCount))
-    for outputIndex in range(0, outputCount):
-      outputIds.append(readOutput(blockFile))
-
-  cutStart2 = 0
-  cutEnd2 = 0
-  if extendedFormat:
-    if flags & 1:
-      cutStart2 = blockFile.tell()
-      for inputIndex in range(0, inputCount):
-        countOfStackItems = readVarInt(blockFile)
-        for stackItemIndex in range(0, countOfStackItems):
-          stackLength = readVarInt(blockFile)
-          stackItem = blockFile.read(stackLength)[::-1]
-          log("Witness item: " + hexToStr(stackItem))
-      cutEnd2 = blockFile.tell()
-
-  lockTime = hexToInt(readIntLittleEndian(blockFile))
-  if lockTime < 500000000:
-    log("\nLock Time is Block Height: " + str(lockTime))
-  else:
-    log("\nLock Time is Timestamp: " + datetime.datetime.fromtimestamp(lockTime).strftime('%d.%m.%Y %H:%M'))
-
-  endByte = blockFile.tell()
-  blockFile.seek(beginByte)
-  lengthToRead = endByte - beginByte
-  dataToHashForTransactionId = blockFile.read(lengthToRead)
-  if extendedFormat and cutStart1 != 0 and cutEnd1 != 0 and cutStart2 != 0 and cutEnd2 != 0:
-    dataToHashForTransactionId = dataToHashForTransactionId[:(cutStart1 - beginByte)] + dataToHashForTransactionId[(cutEnd1 - beginByte):(cutStart2 - beginByte)] + dataToHashForTransactionId[(cutEnd2 - beginByte):]
-  elif extendedFormat:
-    print cutStart1, cutEnd1, cutStart2, cutEnd2
-    quit()
-  firstHash = hashlib.sha256(dataToHashForTransactionId)
-  secondHash = hashlib.sha256(firstHash.digest())
-  hashLittleEndian = secondHash.hexdigest()
-  hashTransaction = stringLittleEndianToBigEndian(binascii.unhexlify(hashLittleEndian))
-  log("\nHash Transaction: " + hashTransaction)
-  if extendedFormat:
-    print hashTransaction
-
-def readBlock(blockFile):
-  magicNumber = binascii.hexlify(blockFile.read(4))
-  try:
-    blockSize = hexToInt(readIntLittleEndian(blockFile))
-  except Exception as e:
+def starts_with_op_n_code(pub):
+    try:
+        value: int = int(pub[0:2], 16)
+        if 1 <= value <= 75:
+            return True
+    except RuntimeError:
+        pass
     return False
-  version = hexToInt(readIntLittleEndian(blockFile))
-  previousHash = binascii.hexlify(blockFile.read(32))
-  merkleHash = binascii.hexlify(blockFile.read(32))
-  creationTimeTimestamp = hexToInt(readIntLittleEndian(blockFile))
-  creationTime = datetime.datetime.fromtimestamp(creationTimeTimestamp).strftime('%d.%m.%Y %H:%M')
-  bits = hexToInt(readIntLittleEndian(blockFile))
-  nonce = hexToInt(readIntLittleEndian(blockFile))
-  countOfTransactions = readVarInt(blockFile)
 
-  log("Magic Number: " + magicNumber)
-  log("Blocksize: " + str(blockSize))
-  log("Version: " + str(version))
-  log("Previous Hash: " + previousHash)
-  log("Merkle Hash: " + merkleHash)
-  log("Time: " + creationTime)
-  log("Bits: " + str(bits))
-  log("Nonce: " + str(nonce))
-  log("Count of Transactions: " + str(countOfTransactions))
-      
-  for transactionIndex in range(0, countOfTransactions):
-    readTransaction(blockFile)
-  return True
+
+def public_key_decode(pub):
+    if pub.lower().startswith('76a914'):
+        pub = pub[6:-4]
+        result = b'\x00' + binascii.unhexlify(pub)
+        h5 = hashlib.sha256(result)
+        h6 = hashlib.sha256(h5.digest())
+        result += h6.digest()[:4]
+        return base58.b58encode(result)
+    elif pub.lower().startswith('a9'):
+        return ""
+    elif starts_with_op_n_code(pub):
+        pub = pub[2:-2]
+        h3 = hashlib.sha256(binascii.unhexlify(pub))
+        h4 = hashlib.new('ripemd160', h3.digest())
+        result = b'\x00' + h4.digest()
+        h5 = hashlib.sha256(result)
+        h6 = hashlib.sha256(h5.digest())
+        result += h6.digest()[:4]
+        return base58.b58encode(result)
+    return ""
+
+
+def string_little_endian_to_big_endian(string):
+    string = binascii.hexlify(string)
+    n = len(string) / 2
+    fmt = '%dh' % n
+    return struct.pack(fmt, *reversed(struct.unpack(fmt, string)))
+
+
+def read_short_little_endian(block_file):
+    return struct.pack(">H", struct.unpack("<H", block_file.read(2))[0])
+
+
+def read_long_little_endian(block_file):
+    return struct.pack(">Q", struct.unpack("<Q", block_file.read(8))[0])
+
+
+def read_int_little_endian(block_file):
+    return struct.pack(">I", struct.unpack("<I", block_file.read(4))[0])
+
+
+def hex2int(value):
+    return int(binascii.hexlify(value), 16)
+
+
+def hex2str(value):
+    return binascii.hexlify(value)
+
+
+def read_var_int(block_file):
+    var_int = ord(block_file.read(1))
+    return_int = 0
+    if var_int < 0xfd:
+        return var_int
+    if var_int == 0xfd:
+        return_int = read_short_little_endian(block_file)
+    if var_int == 0xfe:
+        return_int = read_int_little_endian(block_file)
+    if var_int == 0xff:
+        return_int = read_long_little_endian(block_file)
+    return int(binascii.hexlify(return_int), 16)
+
+
+def read_input(block_file):
+    previous_hash = binascii.hexlify(block_file.read(32)[::-1])
+    out_id = binascii.hexlify(read_int_little_endian(block_file))
+    script_length = read_var_int(block_file)
+    script_signature_raw = hex2str(block_file.read(script_length))
+    script_signature = script_signature_raw
+    seq_no = binascii.hexlify(read_int_little_endian(block_file))
+
+    log("\n" + "Input")
+    log("-" * 20)
+    log("> Previous Hash: " + previous_hash)
+    log("> Out ID: " + out_id)
+    log("> Script length: " + str(script_length))
+    log("> Script Signature (PubKey) Raw: " + script_signature_raw)
+    log("> Script Signature (PubKey): " + script_signature)
+    log("> Seq No: " + seq_no)
+
+
+def read_output(block_file):
+    value = hex2int(read_long_little_endian(block_file)) / 100000000.0
+    script_length = read_var_int(block_file)
+    script_signature_raw = hex2str(block_file.read(script_length))
+    script_signature = script_signature_raw
+    address = ''
+    try:
+        address = public_key_decode(script_signature)
+    except Exception as e:
+        print(e)
+        address = ''
+    log("\n" + "Output")
+    log("-" * 20)
+    log("> Value: " + str(value))
+    log("> Script length: " + str(script_length))
+    log("> Script Signature (PubKey) Raw: " + script_signature_raw)
+    log("> Script Signature (PubKey): " + script_signature)
+    log("> Address: " + address)
+
+
+def read_transaction(block_file):
+    extended_format = False
+    begin_byte = block_file.tell()
+    input_ids = []
+    output_ids = []
+    version = hex2int(read_int_little_endian(block_file))
+    cut_start1 = block_file.tell()
+    cut_end1 = 0
+    input_count = read_var_int(block_file)
+    log("\n\n" + "Transaction")
+    log("-" * 100)
+    log("Version: " + str(version))
+
+    if input_count == 0:
+        extended_format = True
+    flags = ord(block_file.read(1))
+    cut_end1 = block_file.tell()
+    if flags != 0:
+        input_count = read_var_int(block_file)
+    log("\nInput Count: " + str(input_count))
+    for input_index in range(0, input_count):
+        input_ids.append(read_input(block_file))
+    output_count = read_var_int(block_file)
+    for outputIndex in range(0, output_count):
+        output_ids.append(read_output(block_file))
+    else:
+        cut_start1 = 0
+    cut_end1 = 0
+    log("\nInput Count: " + str(input_count))
+    for input_index in range(0, input_count):
+        input_ids.append(read_input(block_file))
+    output_count = read_var_int(block_file)
+    log("\nOutput Count: " + str(output_count))
+    for outputIndex in range(0, output_count):
+        output_ids.append(read_output(block_file))
+
+    cut_start2 = 0
+    cut_end2 = 0
+    if extended_format:
+        if flags & 1:
+            cut_start2 = block_file.tell()
+    for input_index in range(0, input_count):
+        count_of_stack_items = read_var_int(block_file)
+    for stackItemIndex in range(0, count_of_stack_items):
+        stack_length = read_var_int(block_file)
+        stack_item = block_file.read(stack_length)[::-1]
+        log("Witness item: " + hex2str(stack_item))
+    cut_end2 = block_file.tell()
+
+    lock_time = hex2int(read_int_little_endian(block_file))
+    if lock_time < 500000000:
+        log("\nLock Time is Block Height: " + str(lock_time))
+    else:
+        log("\nLock Time is Timestamp: " + datetime.datetime.fromtimestamp(lock_time).strftime('%d.%m.%Y %H:%M'))
+
+    end_byte = block_file.tell()
+    block_file.seek(begin_byte)
+    length_to_read = end_byte - begin_byte
+    data_to_hash_for_transaction_id = block_file.read(length_to_read)
+    if extended_format and cut_start1 != 0 and cut_end1 != 0 and cut_start2 != 0 and cut_end2 != 0:
+        data_to_hash_for_transaction_id = data_to_hash_for_transaction_id[
+                                          :(cut_start1 - begin_byte)] + data_to_hash_for_transaction_id[
+                                                                        (cut_end1 - begin_byte):(
+                                                                                cut_start2 - begin_byte)] + data_to_hash_for_transaction_id[
+                                                                                                            (
+                                                                                                                    cut_end2 - begin_byte):]
+    elif extended_format:
+        print(cut_start1, cut_end1, cut_start2, cut_end2)
+    quit()
+    first_hash = hashlib.sha256(data_to_hash_for_transaction_id)
+    second_hash = hashlib.sha256(first_hash.digest())
+    hash_little_endian = second_hash.hexdigest()
+    hash_transaction = string_little_endian_to_big_endian(binascii.unhexlify(hash_little_endian))
+    log("\nHash Transaction: " + str(hash_transaction))
+    if extended_format:
+        print(hash_transaction)
+
+
+def read_block(block_file):
+    magic_number = binascii.hexlify(block_file.read(4))
+    try:
+        block_size = hex2int(read_int_little_endian(block_file))
+    except RuntimeError:
+        return False
+    version = hex2int(read_int_little_endian(block_file))
+    previous_hash = binascii.hexlify(block_file.read(32))
+    merkle_hash = binascii.hexlify(block_file.read(32))
+    creation_time_timestamp = hex2int(read_int_little_endian(block_file))
+    creation_time = datetime.datetime.fromtimestamp(creation_time_timestamp).strftime('%d.%m.%Y %H:%M')
+    bits = hex2int(read_int_little_endian(block_file))
+    nonce = hex2int(read_int_little_endian(block_file))
+    count_of_transactions = read_var_int(block_file)
+
+    log("Magic Number: " + magic_number)
+    log("Blocksize: " + str(block_size))
+    log("Version: " + str(version))
+    log("Previous Hash: " + previous_hash)
+    log("Merkle Hash: " + merkle_hash)
+    log("Time: " + creation_time)
+    log("Bits: " + str(bits))
+    log("Nonce: " + str(nonce))
+    log("Count of Transactions: " + str(count_of_transactions))
+
+    for transactionIndex in range(0, count_of_transactions):
+        read_transaction(block_file)
+    return True
+
 
 def main():
-  blockFilename = sys.argv[1]
-  with open(blockFilename, "rb") as blockFile:
-      while True:
-        sys.stdout.write('.')
-        sys.stdout.flush()
-        if not readBlock(blockFile):
-          break
+    block_filename = sys.argv[1]
+    with open(block_filename, "rb") as blockFile:
+        while True:
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            if not read_block(blockFile):
+                break
 
 
 if __name__ == "__main__":
-  main()
+    main()
